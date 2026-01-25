@@ -141,18 +141,20 @@ function handleTimeUpdate(event) {
 function attachListenersToVideo(video) {
     if (!video.hasAttribute('data-tracked')) {
         // Initialize state for this video
-        getVideoState(video);
+        const state = getVideoState(video);
         const videoSrc = video.src || video.currentSrc || 'unknown source';
         console.log(`[Video Analytics] Attaching listeners to video: ${videoSrc}`);
 
+        // Initialize lastActualTimeUpdate to prevent race condition
+        // If video is already playing, timeupdate may fire before play event
+        state.lastActualTimeUpdate = Date.now() / 1000;
+
         video.addEventListener('timeupdate', handleTimeUpdate);
         video.addEventListener('play', function () {
-            const state = getVideoState(video);
             state.lastActualTimeUpdate = Date.now() / 1000; // Update the last actual time on play.
             console.log(`[Video Analytics] Video started playing: ${videoSrc}`);
         });
         video.addEventListener('pause', function () {
-            const state = getVideoState(video);
             const currentActualTime = Date.now() / 1000;
             state.actualTimeWatched += currentActualTime - state.lastActualTimeUpdate; // Update watched time on pause.
             console.log(`[Video Analytics] Video paused. Session: accumulated=${state.accumulatedTime.toFixed(1)}s, actual=${state.actualTimeWatched.toFixed(1)}s`);
