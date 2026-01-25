@@ -189,8 +189,7 @@ function importFromCSV() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    updatePopup();
-    // Add pagination controls to the DOM
+    // Add pagination controls to the DOM FIRST (before updatePopup is called)
     const paginationDiv = document.createElement('div');
     paginationDiv.id = 'pagination';
     document.body.appendChild(paginationDiv);
@@ -207,6 +206,9 @@ document.addEventListener('DOMContentLoaded', () => {
             updatePaginationControls();
         }
     });
+
+    // Now call updatePopup (which will call updatePaginationControls)
+    updatePopup();
 
     // Add event listeners for export and import buttons
     document.getElementById('exportBtn').addEventListener('click', exportToCSV);
