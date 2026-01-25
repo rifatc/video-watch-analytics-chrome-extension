@@ -24,7 +24,9 @@ function updatePopup() {
             totalDuration += stats.durationWatched;
             totalActual += stats.actualTimeWatched;
             const timeSaved = stats.durationWatched - stats.actualTimeWatched;
-            const timeSavedPercentage = (timeSaved / stats.durationWatched * 100).toFixed(2);
+            const timeSavedPercentage = stats.durationWatched > 0
+                ? (timeSaved / stats.durationWatched * 100).toFixed(2)
+                : '0.00';
             return {
                 date,
                 durationWatched: formatTime(stats.durationWatched),
@@ -38,7 +40,9 @@ function updatePopup() {
         updatePaginationControls();
 
         const timeSaved = totalDuration - totalActual;
-        const timeSavedPercentage = (timeSaved / totalDuration * 100).toFixed(2);
+        const timeSavedPercentage = totalDuration > 0
+            ? (timeSaved / totalDuration * 100).toFixed(2)
+            : '0.00';
         document.getElementById('totalStats').innerHTML = `
             <p>Total Time Watched: ${formatTime(totalDuration)}</p>
             <p>Total Actual Time Watched: ${formatTime(totalActual)}</p>
