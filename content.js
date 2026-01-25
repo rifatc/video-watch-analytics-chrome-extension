@@ -56,7 +56,9 @@ function getVideoState(video) {
             accumulatedTime: 0,
             actualTimeWatched: 0,
             lastActualTimeUpdate: 0,
-            hostname: getHostname()  // Track which website this video is from
+            hostname: getHostname(),  // Track which website this video is from
+            currentHour: new Date().getHours(),  // Track current hour for hourly breakdown
+            byHour: {}  // Track seconds watched per hour for this video
         });
         trackedVideos.add(video);
     }
@@ -83,6 +85,9 @@ function updateStorage() {
         // Per-site breakdown data
         const siteBreakdown = {};
 
+        // Per-hour breakdown data
+        const hourBreakdown = {};
+
         // Iterate through all tracked videos and sum their times
         // Use a copy of the set to avoid issues if it's modified during iteration
         const videosToProcess = new Set(trackedVideos);
@@ -106,9 +111,18 @@ function updateStorage() {
                         siteBreakdown[state.hostname].actualTimeWatched += state.actualTimeWatched;
                     }
 
+                    // Accumulate per-hour breakdown
+                    for (const [hour, seconds] of Object.entries(state.byHour)) {
+                        if (!hourBreakdown[hour]) {
+                            hourBreakdown[hour] = 0;
+                        }
+                        hourBreakdown[hour] += seconds;
+                    }
+
                     // Reset the counters for this video
                     state.accumulatedTime = 0;
                     state.actualTimeWatched = 0;
+                    state.byHour = {};  // Reset hourly tracking
                 }
             } else {
                 // Video is no longer in DOM, clean up
@@ -136,9 +150,21 @@ function updateStorage() {
             videoWatchHistory[today].bySite[hostname].actualTimeWatched += times.actualTimeWatched;
         }
 
+        // Update per-hour breakdown (new, optional field)
+        if (!videoWatchHistory[today].byHour) {
+            videoWatchHistory[today].byHour = {};
+        }
+
+        for (const [hour, seconds] of Object.entries(hourBreakdown)) {
+            if (!videoWatchHistory[today].byHour[hour]) {
+                videoWatchHistory[today].byHour[hour] = 0;
+            }
+            videoWatchHistory[today].byHour[hour] += seconds;
+        }
+
         chrome.storage.local.set({videoWatchHistory: videoWatchHistory});
 
-        console.log(`[Video Analytics] Storage updated: +${totalAccumulatedTime.toFixed(1)}s duration, +${totalActualTimeWatched.toFixed(1)}s actual. Sites:`, Object.keys(siteBreakdown));
+        console.log(`[Video Analytics] Storage updated: +${totalAccumulatedTime.toFixed(1)}s duration, +${totalActualTimeWatched.toFixed(1)}s actual. Sites:`, Object.keys(siteBreakdown), 'Hours:', Object.keys(hourBreakdown));
     });
 }
 
@@ -148,6 +174,7 @@ function handleTimeUpdate(event) {
     const state = getVideoState(video);
     const currentTime = video.currentTime;
     const currentActualTime = Date.now() / 1000; // Convert to seconds
+    const currentHour = new Date().getHours();
 
     if (state.lastUpdateTime > 0) {
         const timeDiff = currentTime - state.lastUpdateTime;
@@ -155,6 +182,12 @@ function handleTimeUpdate(event) {
         // Only count time increments smaller than 4.5 seconds to ignore large skips.
         if (timeDiff > 0 && timeDiff < 4.5) {
             state.accumulatedTime += timeDiff;
+
+            // Track by hour for time-of-day patterns
+            if (!state.byHour[currentHour]) {
+                state.byHour[currentHour] = 0;
+            }
+            state.byHour[currentHour] += timeDiff;
         }
 
         // Update actual time watched if the video is playing.
@@ -166,6 +199,7 @@ function handleTimeUpdate(event) {
 
     state.lastUpdateTime = currentTime;
     state.lastActualTimeUpdate = currentActualTime;
+    state.currentHour = currentHour;
 
     // Log summary every 10 seconds of accumulated time
     if (state.accumulatedTime > 0 && Math.floor(state.accumulatedTime) % 10 === 0 && Math.floor(state.accumulatedTime) !== state.lastLoggedTime) {
