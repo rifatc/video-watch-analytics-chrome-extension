@@ -79,22 +79,6 @@ function updatePaginationControls() {
         <span>Page ${currentPage} of ${totalPages}</span>
         <button id="nextPage" ${currentPage === totalPages ? 'disabled' : ''}>>></button>
     `;
-
-    document.getElementById('prevPage').addEventListener('click', () => {
-        if (currentPage > 1) {
-            currentPage--;
-            updateTable();
-            updatePaginationControls();
-        }
-    });
-
-    document.getElementById('nextPage').addEventListener('click', () => {
-        if (currentPage < totalPages) {
-            currentPage++;
-            updateTable();
-            updatePaginationControls();
-        }
-    });
 }
 
 function exportToCSV() {
@@ -210,7 +194,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const paginationDiv = document.createElement('div');
     paginationDiv.id = 'pagination';
     document.body.appendChild(paginationDiv);
-    
+
+    // Event delegation for pagination buttons (prevents memory leak from duplicate listeners)
+    paginationDiv.addEventListener('click', (event) => {
+        if (event.target.id === 'prevPage' && currentPage > 1) {
+            currentPage--;
+            updateTable();
+            updatePaginationControls();
+        } else if (event.target.id === 'nextPage' && currentPage < totalPages) {
+            currentPage++;
+            updateTable();
+            updatePaginationControls();
+        }
+    });
+
     // Add event listeners for export and import buttons
     document.getElementById('exportBtn').addEventListener('click', exportToCSV);
     document.getElementById('importBtn').addEventListener('click', importFromCSV);
