@@ -19,8 +19,21 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
 });
 
 // Periodically check all tabs (in case we missed any events)
-setInterval(() => {
-    chrome.tabs.query({}, (tabs) => {
-        tabs.forEach(tab => checkTabForVideo(tab.id));
-    });
-}, 10000);  // Check every 10 seconds
+// Use a flag to prevent duplicate intervals when service worker restarts
+let pollingInterval = null;
+
+function startPolling() {
+    // Clear any existing interval to prevent duplicates
+    if (pollingInterval !== null) {
+        clearInterval(pollingInterval);
+    }
+
+    pollingInterval = setInterval(() => {
+        chrome.tabs.query({}, (tabs) => {
+            tabs.forEach(tab => checkTabForVideo(tab.id));
+        });
+    }, 10000);  // Check every 10 seconds
+}
+
+// Start polling when service worker activates
+startPolling();
