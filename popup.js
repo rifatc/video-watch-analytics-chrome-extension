@@ -74,7 +74,6 @@ function updateTable() {
 
 function updatePaginationControls() {
     const paginationDiv = document.getElementById('pagination');
-    console.log('[Popup] updatePaginationControls called - currentPage:', currentPage, 'totalPages:', totalPages);
     paginationDiv.innerHTML = `
         <button id="prevPage" ${currentPage === 1 ? 'disabled' : ''}><<</button>
         <span>Page ${currentPage} of ${totalPages}</span>
@@ -190,30 +189,21 @@ function importFromCSV() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('[Popup] DOMContentLoaded fired');
-
     // Use the existing pagination div from HTML instead of creating a new one
     const paginationDiv = document.getElementById('pagination');
-    console.log('[Popup] Got existing pagination div from HTML:', paginationDiv);
 
     // Event delegation for pagination buttons (prevents memory leak from duplicate listeners)
     paginationDiv.addEventListener('click', (event) => {
-        console.log('[Popup] Pagination clicked - event.target.id:', event.target.id, 'event.target:', event.target);
         if (event.target.id === 'prevPage' && currentPage > 1) {
-            console.log('[Popup] Prev clicked - currentPage before:', currentPage);
             currentPage--;
             updateTable();
             updatePaginationControls();
         } else if (event.target.id === 'nextPage' && currentPage < totalPages) {
-            console.log('[Popup] Next clicked - currentPage before:', currentPage, 'totalPages:', totalPages);
             currentPage++;
             updateTable();
             updatePaginationControls();
-        } else {
-            console.log('[Popup] Click ignored - prevPage:', event.target.id === 'prevPage', 'currentPage > 1:', currentPage > 1, 'nextPage:', event.target.id === 'nextPage', 'currentPage < totalPages:', currentPage < totalPages);
         }
     });
-    console.log('[Popup] Pagination event listener attached');
 
     // Now call updatePopup (which will call updatePaginationControls)
     updatePopup();
@@ -221,5 +211,4 @@ document.addEventListener('DOMContentLoaded', () => {
     // Add event listeners for export and import buttons
     document.getElementById('exportBtn').addEventListener('click', exportToCSV);
     document.getElementById('importBtn').addEventListener('click', importFromCSV);
-    console.log('[Popup] All event listeners attached');
 });
