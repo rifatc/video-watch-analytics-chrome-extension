@@ -30,6 +30,7 @@ function initializeStorage() {
 
 // Variables to keep track of video playback times and intervals.
 let lastStorageUpdateTime = 0;
+let isTrackingInitialized = false; // Prevent multiple initialization
 
 // Per-video state tracking using WeakMap to avoid memory leaks
 const videoStates = new WeakMap();
@@ -163,13 +164,26 @@ function attachListenersToVideo(video) {
 
 // Initializes video tracking by setting up storage and attaching event listeners to all video elements.
 function initializeTracking() {
+    // Prevent multiple initialization
+    if (isTrackingInitialized) {
+        console.log('[Video Analytics] Tracking already initialized, skipping...');
+        return;
+    }
+    isTrackingInitialized = true;
+    console.log('[Video Analytics] Initializing tracking for the first time...');
+
     initializeStorage();
 
     // Attach listeners to any existing video elements.
     const videos = document.getElementsByTagName('video');
+    let newVideosAttached = 0;
     for (let video of videos) {
-        attachListenersToVideo(video);
+        if (!video.hasAttribute('data-tracked')) {
+            attachListenersToVideo(video);
+            newVideosAttached++;
+        }
     }
+    console.log(`[Video Analytics] Attached listeners to ${newVideosAttached} new video(s) (total on page: ${videos.length})`);
 
     // Monitor the document for newly added video elements and attach listeners to them.
     const observer = new MutationObserver(function (mutations) {
@@ -198,8 +212,22 @@ function initializeTracking() {
 function checkForVideos() {
     const videos = document.getElementsByTagName('video');
     if (videos.length > 0) {
-        console.log(`[Video Analytics] Found ${videos.length} video(s) on page, initializing tracking...`);
-        initializeTracking();
+        if (!isTrackingInitialized) {
+            console.log(`[Video Analytics] Found ${videos.length} video(s) on page, initializing tracking...`);
+            initializeTracking();
+        } else {
+            // Tracking is already initialized, just check for new videos
+            let newVideosCount = 0;
+            for (let video of videos) {
+                if (!video.hasAttribute('data-tracked')) {
+                    attachListenersToVideo(video);
+                    newVideosCount++;
+                }
+            }
+            if (newVideosCount > 0) {
+                console.log(`[Video Analytics] Found ${newVideosCount} new untracked video(s) on page`);
+            }
+        }
     } else {
         console.log('[Video Analytics] No videos found, retrying in 10 seconds...');
         setTimeout(checkForVideos, 10000); // Retry after 10 second if no videos are found.
