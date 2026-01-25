@@ -2,6 +2,7 @@ const ROWS_PER_PAGE = 7; // 7 days per page
 let currentPage = 1;
 let totalPages = 1;
 let paginatedHistory = [];
+let selectedDate = null; // null = show all time, otherwise YYYY-MM-DD
 
 function formatTime(seconds) {
     const hours = Math.floor(seconds / 3600);
@@ -68,7 +69,24 @@ function updateTable() {
 
     pageData.forEach(item => {
         const row = table.insertRow();
-        row.insertCell(0).textContent = item.date;
+
+        // Date cell - clickable to filter website breakdown
+        const dateCell = row.insertCell(0);
+        dateCell.textContent = item.date;
+        dateCell.style.cursor = 'pointer';
+        dateCell.style.textDecoration = 'underline';
+        dateCell.style.color = selectedDate === item.date ? '#4fc3f7' : '#e0e0e0';
+        dateCell.title = selectedDate === item.date ? 'Click to show all websites' : 'Click to show websites for this day';
+        dateCell.onclick = () => {
+            if (selectedDate === item.date) {
+                selectedDate = null; // Deselect
+            } else {
+                selectedDate = item.date; // Select
+            }
+            // Refresh both table (for highlight) and breakdown
+            updatePopup();
+        };
+
         row.insertCell(1).textContent = item.durationWatched;
         row.insertCell(2).textContent = item.actualTimeWatched;
         row.insertCell(3).textContent = item.timeSaved;
@@ -84,12 +102,17 @@ function updatePaginationControls() {
     `;
 }
 
-// Calculate and display website breakdown across all dates
+// Calculate and display website breakdown (all dates or filtered by selectedDate)
 function updateSiteBreakdown(history) {
     const siteTotals = {};
 
-    // Aggregate across all dates
-    for (const [date, stats] of Object.entries(history)) {
+    // Filter dates based on selection
+    const datesToProcess = selectedDate
+        ? { [selectedDate]: history[selectedDate] }
+        : history;
+
+    // Aggregate across filtered dates
+    for (const [date, stats] of Object.entries(datesToProcess)) {
         if (stats.bySite) {
             for (const [hostname, siteStats] of Object.entries(stats.bySite)) {
                 if (!siteTotals[hostname]) {
@@ -121,11 +144,20 @@ function updateSiteBreakdown(history) {
     if (!breakdownDiv) return;
 
     if (sortedSites.length === 0) {
-        breakdownDiv.innerHTML = '<p style="text-align: center; color: #888;">No website data available yet. Watch some videos to see breakdown!</p>';
+        const message = selectedDate
+            ? `No website data for ${selectedDate}. Watch some videos on this date!`
+            : 'No website data available yet. Watch some videos to see breakdown!';
+        breakdownDiv.innerHTML = `<p style="text-align: center; color: #888;">${message}</p>`;
         return;
     }
 
-    let html = '<table style="width: 100%; border-collapse: collapse; margin-top: 8px; background-color: #252530; border-radius: 12px; overflow: hidden; box-shadow: inset 3px 3px 7px rgba(0, 0, 0, 0.5), inset -3px -3px 7px rgba(70, 70, 90, 0.3); padding: 12px;">';
+    // Update header to show what's being displayed
+    const headerText = selectedDate
+        ? `Website Breakdown - ${selectedDate}`
+        : 'Website Breakdown - All Time';
+
+    let html = `<h3 style="margin: 0 0 8px 0; font-size: 14px; color: #4fc3f7;">${headerText}</h3>`;
+    html += '<table style="width: 100%; border-collapse: collapse; margin-top: 8px; background-color: #252530; border-radius: 12px; overflow: hidden; box-shadow: inset 3px 3px 7px rgba(0, 0, 0, 0.5), inset -3px -3px 7px rgba(70, 70, 90, 0.3); padding: 12px;">';
     html += '<tr><th style="background: #2a2a35; color: #e0e0e0; font-weight: 600; padding: 8px 6px; text-align: left; border: none; border-bottom: 1px solid rgba(70, 70, 90, 0.3);">Website</th>';
     html += '<th style="background: #2a2a35; color: #e0e0e0; font-weight: 600; padding: 8px 6px; text-align: left; border: none; border-bottom: 1px solid rgba(70, 70, 90, 0.3);">Time Watched</th>';
     html += '<th style="background: #2a2a35; color: #e0e0e0; font-weight: 600; padding: 8px 6px; text-align: left; border: none; border-bottom: 1px solid rgba(70, 70, 90, 0.3);">%</th></tr>';
