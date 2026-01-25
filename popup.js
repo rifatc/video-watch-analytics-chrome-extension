@@ -190,10 +190,13 @@ function importFromCSV() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('[Popup] DOMContentLoaded fired');
+
     // Add pagination controls to the DOM FIRST (before updatePopup is called)
     const paginationDiv = document.createElement('div');
     paginationDiv.id = 'pagination';
     document.body.appendChild(paginationDiv);
+    console.log('[Popup] Pagination div created and appended');
 
     // Event delegation for pagination buttons (prevents memory leak from duplicate listeners)
     paginationDiv.addEventListener('click', (event) => {
@@ -212,6 +215,7 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('[Popup] Click ignored - prevPage:', event.target.id === 'prevPage', 'currentPage > 1:', currentPage > 1, 'nextPage:', event.target.id === 'nextPage', 'currentPage < totalPages:', currentPage < totalPages);
         }
     });
+    console.log('[Popup] Pagination event listener attached');
 
     // Now call updatePopup (which will call updatePaginationControls)
     updatePopup();
@@ -219,4 +223,5 @@ document.addEventListener('DOMContentLoaded', () => {
     // Add event listeners for export and import buttons
     document.getElementById('exportBtn').addEventListener('click', exportToCSV);
     document.getElementById('importBtn').addEventListener('click', importFromCSV);
+    console.log('[Popup] All event listeners attached');
 });
