@@ -44,10 +44,13 @@ function updatePopup() {
             ? (timeSaved / totalDuration * 100).toFixed(2)
             : '0.00';
         document.getElementById('totalStats').innerHTML = `
-            <p>Total Time Watched: ${formatTime(totalDuration)}</p>
-            <p>Total Actual Time Watched: ${formatTime(totalActual)}</p>
+            <p>Total Time: ${formatTime(totalDuration)}</p>
+            <p>Actual Time: ${formatTime(totalActual)}</p>
             <p>Time Saved: ${formatTime(timeSaved)} (${timeSavedPercentage}%)</p>
         `;
+
+        // Update website breakdown
+        updateSiteBreakdown(history);
     });
 }
 
@@ -79,6 +82,64 @@ function updatePaginationControls() {
         <span>Page ${currentPage} of ${totalPages}</span>
         <button id="nextPage" ${currentPage === totalPages ? 'disabled' : ''}>>></button>
     `;
+}
+
+// Calculate and display website breakdown across all dates
+function updateSiteBreakdown(history) {
+    const siteTotals = {};
+
+    // Aggregate across all dates
+    for (const [date, stats] of Object.entries(history)) {
+        if (stats.bySite) {
+            for (const [hostname, siteStats] of Object.entries(stats.bySite)) {
+                if (!siteTotals[hostname]) {
+                    siteTotals[hostname] = {
+                        durationWatched: 0,
+                        actualTimeWatched: 0
+                    };
+                }
+                siteTotals[hostname].durationWatched += siteStats.durationWatched;
+                siteTotals[hostname].actualTimeWatched += siteStats.actualTimeWatched;
+            }
+        }
+    }
+
+    // Sort by duration watched (descending)
+    const sortedSites = Object.entries(siteTotals)
+        .sort((a, b) => b[1].durationWatched - a[1].durationWatched)
+        .map(([hostname, stats]) => ({
+            hostname,
+            durationWatched: stats.durationWatched,
+            actualTimeWatched: stats.actualTimeWatched,
+            percentage: stats.durationWatched > 0
+                ? (stats.durationWatched / Object.values(siteTotals).reduce((sum, s) => sum + s.durationWatched, 0) * 100).toFixed(1)
+                : '0.0'
+        }));
+
+    // Display breakdown
+    const breakdownDiv = document.getElementById('siteBreakdown');
+    if (!breakdownDiv) return;
+
+    if (sortedSites.length === 0) {
+        breakdownDiv.innerHTML = '<p style="text-align: center; color: #888;">No website data available yet. Watch some videos to see breakdown!</p>';
+        return;
+    }
+
+    let html = '<table style="width: 100%; border-collapse: collapse; margin-top: 8px; background-color: #252530; border-radius: 12px; overflow: hidden; box-shadow: inset 3px 3px 7px rgba(0, 0, 0, 0.5), inset -3px -3px 7px rgba(70, 70, 90, 0.3); padding: 12px;">';
+    html += '<tr><th style="background: #2a2a35; color: #e0e0e0; font-weight: 600; padding: 8px 6px; text-align: left; border: none; border-bottom: 1px solid rgba(70, 70, 90, 0.3);">Website</th>';
+    html += '<th style="background: #2a2a35; color: #e0e0e0; font-weight: 600; padding: 8px 6px; text-align: left; border: none; border-bottom: 1px solid rgba(70, 70, 90, 0.3);">Time Watched</th>';
+    html += '<th style="background: #2a2a35; color: #e0e0e0; font-weight: 600; padding: 8px 6px; text-align: left; border: none; border-bottom: 1px solid rgba(70, 70, 90, 0.3);">%</th></tr>';
+
+    sortedSites.forEach(site => {
+        html += '<tr>';
+        html += `<td style="border: none; border-bottom: 1px solid rgba(70, 70, 90, 0.3); padding: 8px 6px; text-align: left;">${site.hostname}</td>`;
+        html += `<td style="border: none; border-bottom: 1px solid rgba(70, 70, 90, 0.3); padding: 8px 6px; text-align: left;">${formatTime(site.durationWatched)}</td>`;
+        html += `<td style="border: none; border-bottom: 1px solid rgba(70, 70, 90, 0.3); padding: 8px 6px; text-align: left;">${site.percentage}%</td>`;
+        html += '</tr>';
+    });
+
+    html += '</table>';
+    breakdownDiv.innerHTML = html;
 }
 
 function exportToCSV() {

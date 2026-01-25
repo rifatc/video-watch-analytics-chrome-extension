@@ -39,6 +39,15 @@ const videoStates = new WeakMap();
 // Set to track video references (WeakMap is not iterable)
 const trackedVideos = new Set();
 
+// Get the current page's hostname for website breakdown
+function getHostname() {
+    try {
+        return new URL(window.location.href).hostname;
+    } catch {
+        return 'unknown';
+    }
+}
+
 // Get or create state for a video element
 function getVideoState(video) {
     if (!videoStates.has(video)) {
@@ -46,7 +55,8 @@ function getVideoState(video) {
             lastUpdateTime: 0,
             accumulatedTime: 0,
             actualTimeWatched: 0,
-            lastActualTimeUpdate: 0
+            lastActualTimeUpdate: 0,
+            hostname: getHostname()  // Track which website this video is from
         });
         trackedVideos.add(video);
     }
@@ -70,6 +80,9 @@ function updateStorage() {
         let totalAccumulatedTime = 0;
         let totalActualTimeWatched = 0;
 
+        // Per-site breakdown data
+        const siteBreakdown = {};
+
         // Iterate through all tracked videos and sum their times
         // Use a copy of the set to avoid issues if it's modified during iteration
         const videosToProcess = new Set(trackedVideos);
@@ -80,6 +93,19 @@ function updateStorage() {
                 if (state) {
                     totalAccumulatedTime += state.accumulatedTime;
                     totalActualTimeWatched += state.actualTimeWatched;
+
+                    // Accumulate per-site breakdown
+                    if (state.hostname) {
+                        if (!siteBreakdown[state.hostname]) {
+                            siteBreakdown[state.hostname] = {
+                                durationWatched: 0,
+                                actualTimeWatched: 0
+                            };
+                        }
+                        siteBreakdown[state.hostname].durationWatched += state.accumulatedTime;
+                        siteBreakdown[state.hostname].actualTimeWatched += state.actualTimeWatched;
+                    }
+
                     // Reset the counters for this video
                     state.accumulatedTime = 0;
                     state.actualTimeWatched = 0;
@@ -90,12 +116,29 @@ function updateStorage() {
             }
         }
 
+        // Update totals (backward compatible)
         videoWatchHistory[today].durationWatched += totalAccumulatedTime;
         videoWatchHistory[today].actualTimeWatched += totalActualTimeWatched;
 
+        // Update per-site breakdown (new, optional field)
+        if (!videoWatchHistory[today].bySite) {
+            videoWatchHistory[today].bySite = {};
+        }
+
+        for (const [hostname, times] of Object.entries(siteBreakdown)) {
+            if (!videoWatchHistory[today].bySite[hostname]) {
+                videoWatchHistory[today].bySite[hostname] = {
+                    durationWatched: 0,
+                    actualTimeWatched: 0
+                };
+            }
+            videoWatchHistory[today].bySite[hostname].durationWatched += times.durationWatched;
+            videoWatchHistory[today].bySite[hostname].actualTimeWatched += times.actualTimeWatched;
+        }
+
         chrome.storage.local.set({videoWatchHistory: videoWatchHistory});
 
-        console.log(`[Video Analytics] Storage updated: +${totalAccumulatedTime.toFixed(1)}s duration, +${totalActualTimeWatched.toFixed(1)}s actual. Total: ${videoWatchHistory[today]}`);
+        console.log(`[Video Analytics] Storage updated: +${totalAccumulatedTime.toFixed(1)}s duration, +${totalActualTimeWatched.toFixed(1)}s actual. Sites:`, Object.keys(siteBreakdown));
     });
 }
 
