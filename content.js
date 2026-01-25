@@ -31,6 +31,9 @@ let lastStorageUpdateTime = 0;
 // Per-video state tracking using WeakMap to avoid memory leaks
 const videoStates = new WeakMap();
 
+// Set to track video references (WeakMap is not iterable)
+const trackedVideos = new Set();
+
 // Get or create state for a video element
 function getVideoState(video) {
     if (!videoStates.has(video)) {
@@ -40,6 +43,7 @@ function getVideoState(video) {
             actualTimeWatched: 0,
             lastActualTimeUpdate: 0
         });
+        trackedVideos.add(video);
     }
     return videoStates.get(video);
 }
@@ -62,14 +66,22 @@ function updateStorage() {
         let totalActualTimeWatched = 0;
 
         // Iterate through all tracked videos and sum their times
-        for (const [video, state] of videoStates) {
+        // Use a copy of the set to avoid issues if it's modified during iteration
+        const videosToProcess = new Set(trackedVideos);
+        for (const video of videosToProcess) {
             // Only count if the video is still in the DOM
             if (document.contains(video)) {
-                totalAccumulatedTime += state.accumulatedTime;
-                totalActualTimeWatched += state.actualTimeWatched;
-                // Reset the counters for this video
-                state.accumulatedTime = 0;
-                state.actualTimeWatched = 0;
+                const state = videoStates.get(video);
+                if (state) {
+                    totalAccumulatedTime += state.accumulatedTime;
+                    totalActualTimeWatched += state.actualTimeWatched;
+                    // Reset the counters for this video
+                    state.accumulatedTime = 0;
+                    state.actualTimeWatched = 0;
+                }
+            } else {
+                // Video is no longer in DOM, clean up
+                trackedVideos.delete(video);
             }
         }
 
