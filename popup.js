@@ -192,11 +192,9 @@ function importFromCSV() {
 document.addEventListener('DOMContentLoaded', () => {
     console.log('[Popup] DOMContentLoaded fired');
 
-    // Add pagination controls to the DOM FIRST (before updatePopup is called)
-    const paginationDiv = document.createElement('div');
-    paginationDiv.id = 'pagination';
-    document.body.appendChild(paginationDiv);
-    console.log('[Popup] Pagination div created and appended');
+    // Use the existing pagination div from HTML instead of creating a new one
+    const paginationDiv = document.getElementById('pagination');
+    console.log('[Popup] Got existing pagination div from HTML:', paginationDiv);
 
     // Event delegation for pagination buttons (prevents memory leak from duplicate listeners)
     paginationDiv.addEventListener('click', (event) => {
