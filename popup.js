@@ -174,32 +174,29 @@ function updateSiteBreakdown(history) {
     breakdownDiv.innerHTML = html;
 }
 
-function exportToCSV() {
+function exportToJSON() {
     chrome.storage.local.get(['videoWatchHistory'], function(result) {
         const history = result.videoWatchHistory || {};
-        
-        // Sort dates in descending order
+
+        // Create JSON with sorted dates
         const sortedDates = Object.keys(history).sort((a, b) => new Date(b) - new Date(a));
-        
-        // Create CSV header
-        let csvContent = 'Date,Duration Watched,Actual Time Watched,Time Saved,Time Saved Percentage\n';
-        
-        // Add data rows
+        const exportData = {
+            exportDate: new Date().toISOString(),
+            version: '2.0',
+            data: {}
+        };
+
         sortedDates.forEach(date => {
-            const stats = history[date];
-            const timeSaved = stats.durationWatched - stats.actualTimeWatched;
-            const timeSavedPercentage = (timeSaved / stats.durationWatched * 100).toFixed(2);
-            
-            // Format raw seconds for CSV (we want raw numbers for better data analysis)
-            csvContent += `${date},${stats.durationWatched},${stats.actualTimeWatched},${timeSaved},${timeSavedPercentage}%\n`;
+            exportData.data[date] = history[date];
         });
-        
+
         // Create a blob and download link
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const jsonContent = JSON.stringify(exportData, null, 2);
+        const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.setAttribute('href', url);
-        link.setAttribute('download', `video_watch_history_${new Date().toISOString().split('T')[0]}.csv`);
+        link.setAttribute('download', `video_watch_history_${new Date().toISOString().split('T')[0]}.json`);
         link.style.visibility = 'hidden';
         document.body.appendChild(link);
         link.click();
@@ -207,65 +204,103 @@ function exportToCSV() {
     });
 }
 
-function importFromCSV() {
+function importFromJSON() {
     const fileInput = document.getElementById('importFile');
     fileInput.click();
-    
+
     fileInput.addEventListener('change', function(event) {
         const file = event.target.files[0];
         if (!file) return;
-        
+
         const reader = new FileReader();
         reader.onload = function(e) {
             try {
-                const csvContent = e.target.result;
-                const lines = csvContent.split('\n');
-                
-                // Skip header line
-                if (lines.length < 2) {
-                    alert('Invalid CSV file format');
+                const jsonContent = e.target.result;
+                const importData = JSON.parse(jsonContent);
+
+                // Validate import data structure
+                if (!importData.data || typeof importData.data !== 'object') {
+                    alert('Invalid JSON file format. Missing "data" field.');
                     return;
                 }
-                
+
                 // Get existing history
                 chrome.storage.local.get(['videoWatchHistory'], function(result) {
                     let videoWatchHistory = result.videoWatchHistory || {};
                     let importCount = 0;
-                    
-                    // Process each line (skip header)
-                    for (let i = 1; i < lines.length; i++) {
-                        const line = lines[i].trim();
-                        if (!line) continue;
-                        
-                        const values = line.split(',');
-                        if (values.length < 3) continue;
-                        
-                        const date = values[0];
-                        const durationWatched = parseFloat(values[1]);
-                        const actualTimeWatched = parseFloat(values[2]);
-                        
-                        // Validate data
-                        if (isNaN(durationWatched) || isNaN(actualTimeWatched) || !date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                    let updatedCount = 0;
+
+                    // Process each date from import
+                    for (const [date, stats] of Object.entries(importData.data)) {
+                        // Validate date format
+                        if (!date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                            console.warn(`Skipping invalid date: ${date}`);
                             continue;
                         }
-                        
-                        // Update or create entry
+
+                        // Validate stats structure
+                        if (!stats || typeof stats !== 'object') {
+                            console.warn(`Skipping invalid stats for date: ${date}`);
+                            continue;
+                        }
+
+                        // Create or update entry
                         if (!videoWatchHistory[date]) {
                             videoWatchHistory[date] = {
                                 durationWatched: 0,
                                 actualTimeWatched: 0
                             };
                         }
-                        
-                        // Add imported values to existing values
-                        videoWatchHistory[date].durationWatched += durationWatched;
-                        videoWatchHistory[date].actualTimeWatched += actualTimeWatched;
-                        importCount++;
+
+                        // Merge totals
+                        if (stats.durationWatched && !isNaN(stats.durationWatched)) {
+                            videoWatchHistory[date].durationWatched += stats.durationWatched;
+                        }
+                        if (stats.actualTimeWatched && !isNaN(stats.actualTimeWatched)) {
+                            videoWatchHistory[date].actualTimeWatched += stats.actualTimeWatched;
+                        }
+
+                        // Merge bySite if present
+                        if (stats.bySite && typeof stats.bySite === 'object') {
+                            if (!videoWatchHistory[date].bySite) {
+                                videoWatchHistory[date].bySite = {};
+                            }
+                            for (const [hostname, siteStats] of Object.entries(stats.bySite)) {
+                                if (!videoWatchHistory[date].bySite[hostname]) {
+                                    videoWatchHistory[date].bySite[hostname] = {
+                                        durationWatched: 0,
+                                        actualTimeWatched: 0
+                                    };
+                                }
+                                videoWatchHistory[date].bySite[hostname].durationWatched += siteStats.durationWatched || 0;
+                                videoWatchHistory[date].bySite[hostname].actualTimeWatched += siteStats.actualTimeWatched || 0;
+                            }
+                        }
+
+                        // Merge byHour if present
+                        if (stats.byHour && typeof stats.byHour === 'object') {
+                            if (!videoWatchHistory[date].byHour) {
+                                videoWatchHistory[date].byHour = {};
+                            }
+                            for (const [hour, seconds] of Object.entries(stats.byHour)) {
+                                if (!videoWatchHistory[date].byHour[hour]) {
+                                    videoWatchHistory[date].byHour[hour] = 0;
+                                }
+                                videoWatchHistory[date].byHour[hour] += seconds || 0;
+                            }
+                        }
+
+                        if (Object.keys(videoWatchHistory).includes(date)) {
+                            importCount++;
+                        }
+                        if (Object.keys(importData.data).includes(date)) {
+                            updatedCount++;
+                        }
                     }
-                    
+
                     // Save updated history
                     chrome.storage.local.set({videoWatchHistory: videoWatchHistory}, function() {
-                        alert(`Successfully imported ${importCount} records`);
+                        alert(`Successfully imported ${importCount} days of data`);
                         updatePopup(); // Refresh the display
                     });
                 });
@@ -274,7 +309,7 @@ function importFromCSV() {
                 console.error('Import error:', error);
             }
         };
-        
+
         reader.readAsText(file);
         // Reset the file input so the same file can be selected again
         fileInput.value = '';
@@ -302,6 +337,6 @@ document.addEventListener('DOMContentLoaded', () => {
     updatePopup();
 
     // Add event listeners for export and import buttons
-    document.getElementById('exportBtn').addEventListener('click', exportToCSV);
-    document.getElementById('importBtn').addEventListener('click', importFromCSV);
+    document.getElementById('exportBtn').addEventListener('click', exportToJSON);
+    document.getElementById('importBtn').addEventListener('click', importFromJSON);
 });
