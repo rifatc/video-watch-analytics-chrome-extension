@@ -1,5 +1,11 @@
 function checkTabForVideo(tabId) {
     chrome.tabs.get(tabId, (tab) => {
+        // Check for errors (e.g., tab was closed or doesn't exist)
+        if (chrome.runtime.lastError) {
+            // Tab is no longer valid, silently ignore
+            return;
+        }
+
         if (tab.audible) {
             chrome.tabs.sendMessage(tabId, { action: 'checkForVideo' });
         }
