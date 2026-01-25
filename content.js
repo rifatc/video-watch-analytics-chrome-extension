@@ -31,6 +31,7 @@ function initializeStorage() {
 // Variables to keep track of video playback times and intervals.
 let lastStorageUpdateTime = 0;
 let isTrackingInitialized = false; // Prevent multiple initialization
+let mutationObserver = null; // Store observer reference for cleanup
 
 // Per-video state tracking using WeakMap to avoid memory leaks
 const videoStates = new WeakMap();
@@ -188,7 +189,7 @@ function initializeTracking() {
     console.log(`[Video Analytics] Attached listeners to ${newVideosAttached} new video(s) (total on page: ${videos.length})`);
 
     // Monitor the document for newly added video elements and attach listeners to them.
-    const observer = new MutationObserver(function (mutations) {
+    mutationObserver = new MutationObserver(function (mutations) {
         mutations.forEach(function (mutation) {
             if (mutation.type === 'childList') {
                 mutation.addedNodes.forEach(function (node) {
@@ -201,11 +202,16 @@ function initializeTracking() {
         });
     });
 
-    observer.observe(document.body, {childList: true, subtree: true});
+    mutationObserver.observe(document.body, {childList: true, subtree: true});
 
-    // Add event listener to save data before tab is closed
+    // Add event listener to save data and clean up before tab is closed
     window.addEventListener('beforeunload', function() {
-        console.log('[Video Analytics] Tab closing, saving final data...');
+        console.log('[Video Analytics] Tab closing, saving final data and cleaning up...');
+        // Disconnect the observer to prevent memory leaks
+        if (mutationObserver) {
+            mutationObserver.disconnect();
+            mutationObserver = null;
+        }
         updateStorage();
     });
 }
