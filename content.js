@@ -39,15 +39,6 @@ const videoStates = new WeakMap();
 // Set to track video references (WeakMap is not iterable)
 const trackedVideos = new Set();
 
-// Get the current page's hostname for website breakdown
-function getHostname() {
-    try {
-        return new URL(window.location.href).hostname;
-    } catch {
-        return 'unknown';
-    }
-}
-
 // Get or create state for a video element
 function getVideoState(video) {
     if (!videoStates.has(video)) {
@@ -56,7 +47,6 @@ function getVideoState(video) {
             accumulatedTime: 0,
             actualTimeWatched: 0,
             lastActualTimeUpdate: 0,
-            hostname: getHostname(),  // Track which website this video is from
             currentHour: new Date().getHours(),  // Track current hour for hourly breakdown
             byHour: {}  // Track seconds watched per hour for this video
         });
@@ -82,9 +72,6 @@ function updateStorage() {
         let totalAccumulatedTime = 0;
         let totalActualTimeWatched = 0;
 
-        // Per-site breakdown data
-        const siteBreakdown = {};
-
         // Per-hour breakdown data
         const hourBreakdown = {};
 
@@ -98,18 +85,6 @@ function updateStorage() {
                 if (state) {
                     totalAccumulatedTime += state.accumulatedTime;
                     totalActualTimeWatched += state.actualTimeWatched;
-
-                    // Accumulate per-site breakdown
-                    if (state.hostname) {
-                        if (!siteBreakdown[state.hostname]) {
-                            siteBreakdown[state.hostname] = {
-                                durationWatched: 0,
-                                actualTimeWatched: 0
-                            };
-                        }
-                        siteBreakdown[state.hostname].durationWatched += state.accumulatedTime;
-                        siteBreakdown[state.hostname].actualTimeWatched += state.actualTimeWatched;
-                    }
 
                     // Accumulate per-hour breakdown
                     for (const [hour, seconds] of Object.entries(state.byHour)) {
@@ -134,22 +109,6 @@ function updateStorage() {
         videoWatchHistory[today].durationWatched += totalAccumulatedTime;
         videoWatchHistory[today].actualTimeWatched += totalActualTimeWatched;
 
-        // Update per-site breakdown (new, optional field)
-        if (!videoWatchHistory[today].bySite) {
-            videoWatchHistory[today].bySite = {};
-        }
-
-        for (const [hostname, times] of Object.entries(siteBreakdown)) {
-            if (!videoWatchHistory[today].bySite[hostname]) {
-                videoWatchHistory[today].bySite[hostname] = {
-                    durationWatched: 0,
-                    actualTimeWatched: 0
-                };
-            }
-            videoWatchHistory[today].bySite[hostname].durationWatched += times.durationWatched;
-            videoWatchHistory[today].bySite[hostname].actualTimeWatched += times.actualTimeWatched;
-        }
-
         // Update per-hour breakdown (new, optional field)
         if (!videoWatchHistory[today].byHour) {
             videoWatchHistory[today].byHour = {};
@@ -164,7 +123,7 @@ function updateStorage() {
 
         chrome.storage.local.set({videoWatchHistory: videoWatchHistory});
 
-        console.log(`[Video Analytics] Storage updated: +${totalAccumulatedTime.toFixed(1)}s duration, +${totalActualTimeWatched.toFixed(1)}s actual. Sites:`, Object.keys(siteBreakdown), 'Hours:', Object.keys(hourBreakdown));
+        console.log(`[Video Analytics] Storage updated: +${totalAccumulatedTime.toFixed(1)}s duration, +${totalActualTimeWatched.toFixed(1)}s actual. Hours:`, Object.keys(hourBreakdown));
     });
 }
 

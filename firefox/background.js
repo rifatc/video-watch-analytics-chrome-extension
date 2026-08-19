@@ -5,7 +5,7 @@ async function checkTabForVideo(tabId) {
             browser.tabs.sendMessage(tabId, { action: 'checkForVideo' });
         }
     } catch (error) {
-        console.log('Error checking tab:', error);
+        // Tab is no longer valid, silently ignore
     }
 }
 
@@ -22,31 +22,21 @@ browser.tabs.onActivated.addListener(({ tabId }) => {
 });
 
 // Periodically check all tabs (in case we missed any events)
-setInterval(() => {
-    browser.tabs.query({}).then(tabs => {
-        tabs.forEach(tab => checkTabForVideo(tab.id));
-    }).catch(error => {
-        console.log('Error querying tabs:', error);
-    });
-}, 10000);  // Check every 10 seconds
+// Use a flag to prevent duplicate intervals when the background script restarts
+let pollingInterval = null;
 
-// Message handlers for import functionality
-browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'getVideoHistory') {
-        browser.storage.local.get(['videoWatchHistory']).then(result => {
-            sendResponse({ videoWatchHistory: result.videoWatchHistory || {} });
-        }).catch(error => {
-            sendResponse({ videoWatchHistory: {}, error: error.message });
-        });
-        return true; // Keep the message channel open for async response
+function startPolling() {
+    // Clear any existing interval to prevent duplicates
+    if (pollingInterval !== null) {
+        clearInterval(pollingInterval);
     }
-    
-    if (request.action === 'setVideoHistory') {
-        browser.storage.local.set({ videoWatchHistory: request.data }).then(() => {
-            sendResponse({ success: true });
-        }).catch(error => {
-            sendResponse({ success: false, error: error.message });
+
+    pollingInterval = setInterval(() => {
+        browser.tabs.query({}).then(tabs => {
+            tabs.forEach(tab => checkTabForVideo(tab.id));
         });
-        return true; // Keep the message channel open for async response
-    }
-});
+    }, 10000);  // Check every 10 seconds
+}
+
+// Start polling when the background script activates
+startPolling();

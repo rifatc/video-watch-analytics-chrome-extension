@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Video Analytics",
-  "version": "1.0",
+  "version": "1.2",
   "browser_specific_settings": {
     "gecko": {
-      "id": "video-analytics@example.com",
+      "id": "video-analytics@rifatc.com",
       "data_collection_permissions": {
         "required": ["none"]
       }
@@ -28,8 +28,7 @@
     }
   },
   "background": {
-    "scripts": ["background.js"],
-    "persistent": false
+    "scripts": ["background.js"]
   },
   "content_scripts": [
     {
@@ -39,7 +38,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["icons/*.png", "icons/*.svg", "import.html"],
+      "resources": ["icons/*.png", "icons/*.svg"],
       "matches": ["<all_urls>"]
     }
   ],

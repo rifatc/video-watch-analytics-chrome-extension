@@ -11,7 +11,7 @@ function formatTime(seconds) {
 }
 
 function updatePopup() {
-    browser.storage.local.get(['videoWatchHistory'], function(result) {
+    browser.storage.local.get(['videoWatchHistory']).then((result) => {
         const history = result.videoWatchHistory || {};
         let totalDuration = 0;
         let totalActual = 0;
@@ -24,7 +24,9 @@ function updatePopup() {
             totalDuration += stats.durationWatched;
             totalActual += stats.actualTimeWatched;
             const timeSaved = stats.durationWatched - stats.actualTimeWatched;
-            const timeSavedPercentage = (timeSaved / stats.durationWatched * 100).toFixed(2);
+            const timeSavedPercentage = stats.durationWatched > 0
+                ? (timeSaved / stats.durationWatched * 100).toFixed(2)
+                : '0.00';
             return {
                 date,
                 durationWatched: formatTime(stats.durationWatched),
@@ -38,23 +40,14 @@ function updatePopup() {
         updatePaginationControls();
 
         const timeSaved = totalDuration - totalActual;
-        const timeSavedPercentage = (timeSaved / totalDuration * 100).toFixed(2);
-        
-        // Safely create elements instead of using innerHTML
-        const totalStatsDiv = document.getElementById('totalStats');
-        totalStatsDiv.innerHTML = ''; // Clear existing content
-        
-        const p1 = document.createElement('p');
-        p1.textContent = `Total Time Watched: ${formatTime(totalDuration)}`;
-        totalStatsDiv.appendChild(p1);
-        
-        const p2 = document.createElement('p');
-        p2.textContent = `Total Actual Time Watched: ${formatTime(totalActual)}`;
-        totalStatsDiv.appendChild(p2);
-        
-        const p3 = document.createElement('p');
-        p3.textContent = `Time Saved: ${formatTime(timeSaved)} (${timeSavedPercentage}%)`;
-        totalStatsDiv.appendChild(p3);
+        const timeSavedPercentage = totalDuration > 0
+            ? (timeSaved / totalDuration * 100).toFixed(2)
+            : '0.00';
+        document.getElementById('totalStats').innerHTML = `
+            <p>Total Time: ${formatTime(totalDuration)}</p>
+            <p>Actual Time: ${formatTime(totalActual)}</p>
+            <p>Time Saved: ${formatTime(timeSaved)} (${timeSavedPercentage}%)</p>
+        `;
     });
 }
 
@@ -72,6 +65,7 @@ function updateTable() {
 
     pageData.forEach(item => {
         const row = table.insertRow();
+
         row.insertCell(0).textContent = item.date;
         row.insertCell(1).textContent = item.durationWatched;
         row.insertCell(2).textContent = item.actualTimeWatched;
@@ -81,74 +75,36 @@ function updateTable() {
 
 function updatePaginationControls() {
     const paginationDiv = document.getElementById('pagination');
-    paginationDiv.innerHTML = ''; // Clear existing content
-    
-    // Create prev button
-    const prevButton = document.createElement('button');
-    prevButton.id = 'prevPage';
-    prevButton.textContent = '<<';
-    if (currentPage === 1) {
-        prevButton.disabled = true;
-    }
-    paginationDiv.appendChild(prevButton);
-    
-    // Create page span
-    const pageSpan = document.createElement('span');
-    pageSpan.textContent = `Page ${currentPage} of ${totalPages}`;
-    paginationDiv.appendChild(pageSpan);
-    
-    // Create next button
-    const nextButton = document.createElement('button');
-    nextButton.id = 'nextPage';
-    nextButton.textContent = '>>';
-    if (currentPage === totalPages) {
-        nextButton.disabled = true;
-    }
-    paginationDiv.appendChild(nextButton);
-
-    document.getElementById('prevPage').addEventListener('click', () => {
-        if (currentPage > 1) {
-            currentPage--;
-            updateTable();
-            updatePaginationControls();
-        }
-    });
-
-    document.getElementById('nextPage').addEventListener('click', () => {
-        if (currentPage < totalPages) {
-            currentPage++;
-            updateTable();
-            updatePaginationControls();
-        }
-    });
+    paginationDiv.innerHTML = `
+        <button id="prevPage" ${currentPage === 1 ? 'disabled' : ''}><<</button>
+        <span>Page ${currentPage} of ${totalPages}</span>
+        <button id="nextPage" ${currentPage === totalPages ? 'disabled' : ''}>>></button>
+    `;
 }
 
-function exportToCSV() {
-    browser.storage.local.get(['videoWatchHistory'], function(result) {
+function exportToJSON() {
+    browser.storage.local.get(['videoWatchHistory']).then((result) => {
         const history = result.videoWatchHistory || {};
 
-        // Sort dates in descending order
+        // Create JSON with sorted dates
         const sortedDates = Object.keys(history).sort((a, b) => new Date(b) - new Date(a));
+        const exportData = {
+            exportDate: new Date().toISOString(),
+            version: '2.0',
+            data: {}
+        };
 
-        // Create CSV header
-        let csvContent = 'Date,Duration Watched,Actual Time Watched,Time Saved,Time Saved Percentage\n';
-
-        // Add data rows
         sortedDates.forEach(date => {
-            const stats = history[date];
-            const timeSaved = stats.durationWatched - stats.actualTimeWatched;
-            const timeSavedPercentage = (timeSaved / stats.durationWatched * 100).toFixed(2);
-
-            // Format raw seconds for CSV (we want raw numbers for better data analysis)
-            csvContent += `${date},${stats.durationWatched},${stats.actualTimeWatched},${timeSaved},${timeSavedPercentage}%\n`;
+            exportData.data[date] = history[date];
         });
 
         // Create a blob and download link
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const jsonContent = JSON.stringify(exportData, null, 2);
+        const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.setAttribute('href', url);
-        link.setAttribute('download', `video_watch_history_${new Date().toISOString().split('T')[0]}.csv`);
+        link.setAttribute('download', `video_watch_history_${new Date().toISOString().split('T')[0]}.json`);
         link.style.visibility = 'hidden';
         document.body.appendChild(link);
         link.click();
@@ -156,25 +112,36 @@ function exportToCSV() {
     });
 }
 
-function importFromCSV() {
-    console.log('Import function called - opening new tab');
-    
-    // Open import.html in a new tab
+function importFromJSON() {
+    // Firefox closes the popup when a native file picker opens from inside it,
+    // which kills the page before the file selection can be processed.
+    // Opening the picker in a full tab avoids that.
     browser.tabs.create({
         url: browser.runtime.getURL('import.html')
     });
 }
 
-
-
 document.addEventListener('DOMContentLoaded', () => {
+    // Use the existing pagination div from HTML instead of creating a new one
+    const paginationDiv = document.getElementById('pagination');
+
+    // Event delegation for pagination buttons (prevents memory leak from duplicate listeners)
+    paginationDiv.addEventListener('click', (event) => {
+        if (event.target.id === 'prevPage' && currentPage > 1) {
+            currentPage--;
+            updateTable();
+            updatePaginationControls();
+        } else if (event.target.id === 'nextPage' && currentPage < totalPages) {
+            currentPage++;
+            updateTable();
+            updatePaginationControls();
+        }
+    });
+
+    // Now call updatePopup (which will call updatePaginationControls)
     updatePopup();
-    // Add pagination controls to the DOM
-    const paginationDiv = document.createElement('div');
-    paginationDiv.id = 'pagination';
-    document.body.appendChild(paginationDiv);
 
     // Add event listeners for export and import buttons
-    document.getElementById('exportBtn').addEventListener('click', exportToCSV);
-    document.getElementById('importBtn').addEventListener('click', importFromCSV);
+    document.getElementById('exportBtn').addEventListener('click', exportToJSON);
+    document.getElementById('importBtn').addEventListener('click', importFromJSON);
 });

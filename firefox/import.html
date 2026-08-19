@@ -1,201 +1,108 @@
 <!DOCTYPE html>
 <html>
     <head>
-        <title>Video Analytics - Import CSV</title>
+        <title>Import Video Watchtime Data</title>
         <style>
             body {
+                width: 480px;
+                margin: 40px auto;
+                padding: 8px;
                 font-family: Arial, sans-serif;
+                font-size: 13px;
                 background: #1e1e24;
                 color: #e0e0e0;
-                margin: 0;
-                padding: 20px;
-                min-height: 100vh;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
             }
 
-            .container {
-                max-width: 600px;
-                width: 100%;
-                background: #252530;
+            .h2-container {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-bottom: 16px;
+                padding: 12px 6px;
                 border-radius: 12px;
-                padding: 30px;
                 box-shadow: inset 3px 3px 7px rgba(0, 0, 0, 0.5), inset -3px -3px 7px rgba(70, 70, 90, 0.3);
             }
 
-            h1 {
-                text-align: center;
-                margin-bottom: 30px;
-                color: #e0e0e0;
+            .h2-icon {
+                width: 24px;
+                height: 24px;
             }
 
-            .drop-area {
-                border: 2px dashed #3a3a45;
-                border-radius: 8px;
-                padding: 40px;
-                text-align: center;
-                margin-bottom: 20px;
-                cursor: pointer;
-                transition: all 0.3s;
-                background: #2a2a35;
-            }
-
-            .drop-area:hover {
-                border-color: #e0e0e0;
-                background: #323245;
-            }
-
-            .drop-area.dragover {
-                border-color: #e0e0e0;
-                background: #323245;
-            }
-
-            .drop-area p {
+            h2 {
                 margin: 0;
                 font-size: 16px;
             }
 
-            .drop-area .small {
-                font-size: 14px;
-                color: #888;
-                margin-top: 8px;
+            .stats-card {
+                background: #252530;
+                border-radius: 12px;
+                padding: 16px;
+                margin-bottom: 12px;
+                box-shadow: inset 3px 3px 7px rgba(0, 0, 0, 0.5), inset -3px -3px 7px rgba(70, 70, 90, 0.3);
             }
 
-            .file-input {
-                display: none;
+            .stats-card p {
+                margin: 8px 0;
+                line-height: 1.5;
             }
 
-            .file-info {
-                background: #2a2a35;
-                border-radius: 8px;
-                padding: 15px;
-                margin-bottom: 20px;
-                display: none;
-            }
-
-            .file-info h3 {
-                margin: 0 0 10px 0;
-                font-size: 14px;
+            input[type="file"] {
+                display: block;
+                margin: 12px 0;
                 color: #e0e0e0;
             }
 
-            .buttons {
-                display: flex;
-                gap: 15px;
-                justify-content: center;
-            }
-
-            .btn {
-                padding: 12px 24px;
+            button {
+                font-size: 13px;
+                padding: 10px 18px;
                 border: none;
                 border-radius: 8px;
+                background: #2a2a35;
+                color: #e0e0e0;
                 cursor: pointer;
-                font-size: 14px;
                 transition: all 0.3s;
                 box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.5), -4px -4px 8px rgba(70, 70, 90, 0.3);
             }
 
-            .btn-primary {
-                background: #2a2a35;
-                color: #e0e0e0;
-            }
-
-            .btn-primary:hover {
+            button:hover:not(:disabled) {
                 background: #323245;
+                box-shadow: 3px 3px 5px rgba(0, 0, 0, 0.5), -3px -3px 5px rgba(70, 70, 90, 0.3);
             }
 
-            .btn-secondary {
-                background: #2a2a35;
-                color: #e0e0e0;
+            button:active:not(:disabled) {
+                box-shadow: inset 3px 3px 7px rgba(0, 0, 0, 0.5), inset -3px -3px 7px rgba(70, 70, 90, 0.3);
             }
 
-            .btn-secondary:hover {
-                background: #323245;
-            }
-
-            .btn:disabled {
+            button:disabled {
                 opacity: 0.5;
                 cursor: not-allowed;
             }
 
-            .status {
-                margin-top: 20px;
-                padding: 15px;
-                border-radius: 8px;
-                text-align: center;
-                display: none;
+            #status {
+                margin-top: 12px;
+                font-size: 13px;
             }
 
-            .status.success {
-                background: #2d5a2d;
-                color: #e0e0e0;
+            #status.success {
+                color: #6ee7a0;
             }
 
-            .status.error {
-                background: #5a2d2d;
-                color: #e0e0e0;
-            }
-
-            .instructions {
-                background: #2a2a35;
-                border-radius: 8px;
-                padding: 20px;
-                margin-bottom: 20px;
-            }
-
-            .instructions h3 {
-                margin: 0 0 10px 0;
-                font-size: 16px;
-            }
-
-            .instructions ul {
-                margin: 10px 0;
-                padding-left: 20px;
-            }
-
-            .instructions li {
-                margin-bottom: 5px;
+            #status.error {
+                color: #ff8a8a;
             }
         </style>
     </head>
     <body>
-        <div class="container">
-            <div style="display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 30px;">
-                <img src="icons/icon128.png" alt="Video Analytics Icon" style="width: 48px; height: 48px;">
-                <h1 style="margin: 0;">Import Video Analytics CSV</h1>
-            </div>
-            
-            <div class="instructions">
-                <h3>Instructions:</h3>
-                <ul>
-                    <li>Select a CSV file exported from Video Analytics</li>
-                    <li>The CSV should have columns: Date, Duration Watched, Actual Time Watched</li>
-                    <li>Imported data will be merged with existing data</li>
-                </ul>
-            </div>
-
-            <div class="drop-area" id="dropArea">
-                <p>Drag & drop your CSV file here</p>
-                <p class="small">or click to browse</p>
-            </div>
-
-            <input type="file" id="fileInput" class="file-input" accept=".csv">
-
-            <div class="file-info" id="fileInfo">
-                <h3>Selected File:</h3>
-                <p id="fileName"></p>
-                <p id="fileSize"></p>
-            </div>
-
-            <div class="buttons">
-                <button id="importBtn" class="btn btn-primary" disabled>Import CSV</button>
-                <button id="cancelBtn" class="btn btn-secondary">Cancel</button>
-            </div>
-
-            <div id="status" class="status"></div>
+        <div class="h2-container">
+            <img src="icons/icon128.png" alt="Icon" class="h2-icon">
+            <h2>Import Video Watchtime Data</h2>
         </div>
-
+        <div class="stats-card">
+            <p>Select a JSON file previously exported from Video Analytics. Imported data is merged with what's already stored — existing days are added to, not overwritten.</p>
+            <input type="file" id="importFile" accept=".json">
+            <button id="importBtn" disabled>Import</button>
+            <div id="status"></div>
+        </div>
         <script src="import.js"></script>
     </body>
 </html>
