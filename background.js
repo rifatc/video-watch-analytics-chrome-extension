@@ -7,7 +7,12 @@ function checkTabForVideo(tabId) {
         }
 
         if (tab.audible) {
-            chrome.tabs.sendMessage(tabId, { action: 'checkForVideo' });
+            // Swallow "Receiving end does not exist" errors for tabs whose
+            // content script is absent (e.g. tabs opened before the extension
+            // was installed or reloaded).
+            chrome.tabs.sendMessage(tabId, { action: 'checkForVideo' }).catch((error) => {
+                console.debug(`[Video Analytics] No content script in audible tab ${tabId} (expected for pages opened before install/reload): ${error.message}`);
+            });
         }
     });
 }

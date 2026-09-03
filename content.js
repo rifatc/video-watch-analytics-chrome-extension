@@ -1,4 +1,4 @@
-// This script is designed to track and store the amount of time a user spends watching videos on a webpage. 
+// This script is designed to track and store the amount of time a user spends watching videos on a webpage.
 // It uses Chrome's local storage to keep a record of the total duration watched and the actual time spent watching videos for each day.
 
 // Returns today's date in YYYY-MM-DD format.
@@ -10,28 +10,17 @@ function getTodayDate() {
     return `${year}-${month}-${day}`;
 }
 
-// Initializes or updates the local storage with an entry for today if it doesn't exist.
-function initializeStorage() {
-    chrome.storage.local.get(['videoWatchHistory'], function (result) {
-        let videoWatchHistory = result.videoWatchHistory || {};
-        const today = getTodayDate();
-        if (!videoWatchHistory[today]) {
-            videoWatchHistory[today] = {
-                durationWatched: 0,
-                actualTimeWatched: 0
-            };
-            chrome.storage.local.set({videoWatchHistory: videoWatchHistory});
-            console.log(`[Video Analytics] Initialized storage for today: ${today}`);
-        } else {
-            console.log(`[Video Analytics] Storage exists for ${today}, existing data:`, videoWatchHistory[today]);
-        }
-    });
-}
+// In-memory mirror of chrome.storage.local's "videoWatchHistory".
+// All merges happen synchronously against this cache, so consecutive flushes
+// within this frame can never interleave read-modify-write cycles.
+let cachedHistory = {};
+let storageLoaded = false;
 
 // Variables to keep track of video playback times and intervals.
 let lastStorageUpdateTime = 0;
 let isTrackingInitialized = false; // Prevent multiple initialization
 let mutationObserver = null; // Store observer reference for cleanup
+let retryTimer = null; // Only ever one pending checkForVideos retry timer
 
 // Per-video state tracking using WeakMap to avoid memory leaks
 const videoStates = new WeakMap();
@@ -41,90 +30,146 @@ const trackedVideos = new Set();
 
 // Get or create state for a video element
 function getVideoState(video) {
-    if (!videoStates.has(video)) {
+    const isNewVideo = !videoStates.has(video);
+    if (isNewVideo) {
         videoStates.set(video, {
-            lastUpdateTime: 0,
-            accumulatedTime: 0,
-            actualTimeWatched: 0,
+            lastUpdateTime: null, // null = no sample yet (fixes skipped first timeupdate)
             lastActualTimeUpdate: 0,
-            currentHour: new Date().getHours(),  // Track current hour for hourly breakdown
-            byHour: {}  // Track seconds watched per hour for this video
+            lastLoggedTime: 0,
+            // Watch time is bucketed by the date/hour it was watched, not when it is flushed
+            byDate: {} // { [date]: { durationWatched, actualTimeWatched, byHour } }
         });
+    }
+    // Re-register on every touch so a video detached from the DOM and re-added
+    // later is picked up again by the next flush. Log only when the element is
+    // actually back in the DOM - a detached-but-still-playing video would
+    // otherwise re-log on every purge/re-register cycle.
+    if (!trackedVideos.has(video)) {
+        if (!isNewVideo && document.contains(video)) {
+            console.log('[Video Analytics] Re-registering previously detached video');
+        }
         trackedVideos.add(video);
     }
     return videoStates.get(video);
 }
 
-// Updates the local storage with the accumulated time watched and resets the counters.
-function updateStorage() {
+// Returns (creating if needed) this video's delta bucket for the current date.
+function getDayBucket(state) {
+    const date = getTodayDate();
+    if (!state.byDate[date]) {
+        state.byDate[date] = { durationWatched: 0, actualTimeWatched: 0, byHour: {} };
+    }
+    return state.byDate[date];
+}
+
+function recordContentTime(state, seconds) {
+    const bucket = getDayBucket(state);
+    bucket.durationWatched += seconds;
+    const hour = String(new Date().getHours());
+    bucket.byHour[hour] = (bucket.byHour[hour] || 0) + seconds;
+}
+
+function recordActualTime(state, seconds) {
+    getDayBucket(state).actualTimeWatched += seconds;
+}
+
+// Loads the stored history into the in-memory cache once, before any flush runs.
+function initializeStorage() {
     chrome.storage.local.get(['videoWatchHistory'], function (result) {
-        let videoWatchHistory = result.videoWatchHistory || {};
-        const today = getTodayDate();
-
-        if (!videoWatchHistory[today]) {
-            videoWatchHistory[today] = {
-                durationWatched: 0,
-                actualTimeWatched: 0
-            };
+        if (!storageLoaded) {
+            cachedHistory = result.videoWatchHistory || {};
+            storageLoaded = true;
         }
-
-        // Accumulate time from all tracked videos
-        let totalAccumulatedTime = 0;
-        let totalActualTimeWatched = 0;
-
-        // Per-hour breakdown data
-        const hourBreakdown = {};
-
-        // Iterate through all tracked videos and sum their times
-        // Use a copy of the set to avoid issues if it's modified during iteration
-        const videosToProcess = new Set(trackedVideos);
-        for (const video of videosToProcess) {
-            // Only count if the video is still in the DOM
-            if (document.contains(video)) {
-                const state = videoStates.get(video);
-                if (state) {
-                    totalAccumulatedTime += state.accumulatedTime;
-                    totalActualTimeWatched += state.actualTimeWatched;
-
-                    // Accumulate per-hour breakdown
-                    for (const [hour, seconds] of Object.entries(state.byHour)) {
-                        if (!hourBreakdown[hour]) {
-                            hourBreakdown[hour] = 0;
-                        }
-                        hourBreakdown[hour] += seconds;
-                    }
-
-                    // Reset the counters for this video
-                    state.accumulatedTime = 0;
-                    state.actualTimeWatched = 0;
-                    state.byHour = {};  // Reset hourly tracking
-                }
-            } else {
-                // Video is no longer in DOM, clean up
-                trackedVideos.delete(video);
-            }
-        }
-
-        // Update totals (backward compatible)
-        videoWatchHistory[today].durationWatched += totalAccumulatedTime;
-        videoWatchHistory[today].actualTimeWatched += totalActualTimeWatched;
-
-        // Update per-hour breakdown (new, optional field)
-        if (!videoWatchHistory[today].byHour) {
-            videoWatchHistory[today].byHour = {};
-        }
-
-        for (const [hour, seconds] of Object.entries(hourBreakdown)) {
-            if (!videoWatchHistory[today].byHour[hour]) {
-                videoWatchHistory[today].byHour[hour] = 0;
-            }
-            videoWatchHistory[today].byHour[hour] += seconds;
-        }
-
-        chrome.storage.local.set({videoWatchHistory: videoWatchHistory});
-
-        console.log(`[Video Analytics] Storage updated: +${totalAccumulatedTime.toFixed(1)}s duration, +${totalActualTimeWatched.toFixed(1)}s actual. Hours:`, Object.keys(hourBreakdown));
+        console.log(`[Video Analytics] Storage cache loaded (${Object.keys(cachedHistory).length} days)`);
     });
+}
+
+// Keep the cache in sync with writes coming from other contexts
+// (other frames of this tab, or the popup's import feature).
+chrome.storage.onChanged.addListener(function (changes, area) {
+    if (area === 'local' && changes.videoWatchHistory && storageLoaded) {
+        cachedHistory = changes.videoWatchHistory.newValue || {};
+    }
+});
+
+// Updates the local storage with the accumulated time watched and resets the counters.
+// The merge into cachedHistory is fully synchronous and followed by a single set(),
+// so this is safe to call concurrently from pause handlers, the periodic throttle,
+// and page-unload handlers without ever interleaving read-modify-write cycles.
+function updateStorage() {
+    if (!storageLoaded) {
+        // Deltas stay in state.byDate and are flushed once storage has loaded.
+        console.log('[Video Analytics] Storage cache not loaded yet, deferring flush');
+        return;
+    }
+
+    // Accumulate time from all tracked videos (including ones no longer in the
+    // DOM - their un-flushed time is real and must not be discarded).
+    let totalDuration = 0;
+    let totalActual = 0;
+    const flushedHours = [];
+    const dayDeltas = {}; // per-date summary for logging
+
+    for (const video of trackedVideos) {
+        const state = videoStates.get(video);
+        if (!state) {
+            continue;
+        }
+
+        // Flush each watched-date bucket to its own day key, so time watched
+        // before midnight is never attributed to the next day.
+        for (const [date, bucket] of Object.entries(state.byDate)) {
+            if (!cachedHistory[date]) {
+                cachedHistory[date] = {
+                    durationWatched: 0,
+                    actualTimeWatched: 0
+                };
+            }
+            const day = cachedHistory[date];
+            day.durationWatched += bucket.durationWatched;
+            day.actualTimeWatched += bucket.actualTimeWatched;
+
+            if (!day.byHour) {
+                day.byHour = {};
+            }
+            for (const [hour, seconds] of Object.entries(bucket.byHour)) {
+                day.byHour[hour] = (day.byHour[hour] || 0) + seconds;
+                if (!flushedHours.includes(hour)) {
+                    flushedHours.push(hour);
+                }
+            }
+
+            if (!dayDeltas[date]) {
+                dayDeltas[date] = { duration: 0, actual: 0 };
+            }
+            dayDeltas[date].duration += bucket.durationWatched;
+            dayDeltas[date].actual += bucket.actualTimeWatched;
+            totalDuration += bucket.durationWatched;
+            totalActual += bucket.actualTimeWatched;
+        }
+        state.byDate = {};
+    }
+
+    // Videos removed from the DOM have been flushed above; drop them so detached
+    // elements don't leak. getVideoState() re-registers them if they come back.
+    let purgedCount = 0;
+    for (const video of trackedVideos) {
+        if (!document.contains(video)) {
+            trackedVideos.delete(video);
+            purgedCount++;
+        }
+    }
+    if (purgedCount > 0) {
+        console.log(`[Video Analytics] Purged ${purgedCount} detached video(s) after flush`);
+    }
+
+    if (totalDuration > 0 || totalActual > 0) {
+        chrome.storage.local.set({videoWatchHistory: cachedHistory});
+        const perDate = Object.entries(dayDeltas)
+            .map(([date, t]) => `${date}: +${t.duration.toFixed(1)}s duration / +${t.actual.toFixed(1)}s actual`)
+            .join(', ');
+        console.log(`[Video Analytics] Storage updated (${perDate}). Hours:`, flushedHours);
+    }
 }
 
 // Handles the 'timeupdate' event for videos, updating the watched time.
@@ -133,38 +178,46 @@ function handleTimeUpdate(event) {
     const state = getVideoState(video);
     const currentTime = video.currentTime;
     const currentActualTime = Date.now() / 1000; // Convert to seconds
-    const currentHour = new Date().getHours();
 
-    if (state.lastUpdateTime > 0) {
+    if (state.lastUpdateTime !== null) {
         const timeDiff = currentTime - state.lastUpdateTime;
 
-        // Only count time increments smaller than 4.5 seconds to ignore large skips.
-        if (timeDiff > 0 && timeDiff < 4.5) {
-            state.accumulatedTime += timeDiff;
-
-            // Track by hour for time-of-day patterns
-            if (!state.byHour[currentHour]) {
-                state.byHour[currentHour] = 0;
+        // Only count content-time increments smaller than 4.5 seconds to ignore
+        // large skips, and only while actually playing - timeupdate also fires
+        // while paused when the user scrubs, which must not count as watch time.
+        if (!video.paused) {
+            if (timeDiff > 0 && timeDiff < 4.5) {
+                recordContentTime(state, timeDiff);
+            } else if (timeDiff >= 4.5) {
+                console.log(`[Video Analytics] Ignoring ${timeDiff.toFixed(1)}s forward skip (seek)`);
+            } else if (timeDiff < 0) {
+                console.log(`[Video Analytics] Ignoring ${Math.abs(timeDiff).toFixed(1)}s backward seek`);
             }
-            state.byHour[currentHour] += timeDiff;
+        } else if (timeDiff !== 0) {
+            console.log(`[Video Analytics] Ignoring ${timeDiff.toFixed(2)}s content change while paused (scrub)`);
         }
 
-        // Update actual time watched if the video is playing.
+        // Update actual time watched only while the video is playing.
         if (!video.paused) {
             const actualTimeDiff = currentActualTime - state.lastActualTimeUpdate;
-            state.actualTimeWatched += actualTimeDiff;
+            if (actualTimeDiff > 0) {
+                recordActualTime(state, actualTimeDiff);
+            }
         }
+    } else {
+        console.log(`[Video Analytics] First timeupdate: baseline set at ${currentTime.toFixed(2)}s, counting starts on next update`);
     }
 
     state.lastUpdateTime = currentTime;
     state.lastActualTimeUpdate = currentActualTime;
-    state.currentHour = currentHour;
 
     // Log summary every 10 seconds of accumulated time
-    if (state.accumulatedTime > 0 && Math.floor(state.accumulatedTime) % 10 === 0 && Math.floor(state.accumulatedTime) !== state.lastLoggedTime) {
-        state.lastLoggedTime = Math.floor(state.accumulatedTime);
+    const totalDuration = Object.values(state.byDate).reduce((sum, b) => sum + b.durationWatched, 0);
+    const totalActual = Object.values(state.byDate).reduce((sum, b) => sum + b.actualTimeWatched, 0);
+    if (totalDuration > 0 && Math.floor(totalDuration) % 10 === 0 && Math.floor(totalDuration) !== state.lastLoggedTime) {
+        state.lastLoggedTime = Math.floor(totalDuration);
         const videoSrc = video.src || video.currentSrc || 'video';
-        console.log(`[Video Analytics] Progress: ${videoSrc} - ${state.accumulatedTime.toFixed(1)}s duration, ${state.actualTimeWatched.toFixed(1)}s actual time`);
+        console.log(`[Video Analytics] Progress: ${videoSrc} - ${totalDuration.toFixed(1)}s duration, ${totalActual.toFixed(1)}s actual time`);
     }
 
     // Periodically update the storage every 30 seconds.
@@ -192,9 +245,16 @@ function attachListenersToVideo(video) {
             console.log(`[Video Analytics] Video started playing: ${videoSrc}`);
         });
         video.addEventListener('pause', function () {
-            const currentActualTime = Date.now() / 1000;
-            state.actualTimeWatched += currentActualTime - state.lastActualTimeUpdate; // Update watched time on pause.
-            console.log(`[Video Analytics] Video paused. Session: accumulated=${state.accumulatedTime.toFixed(1)}s, actual=${state.actualTimeWatched.toFixed(1)}s`);
+            // Re-fetch state in case the element was detached and re-added.
+            const currentState = getVideoState(video);
+            const delta = Date.now() / 1000 - currentState.lastActualTimeUpdate;
+            if (delta > 0) {
+                recordActualTime(currentState, delta);
+            }
+            currentState.lastActualTimeUpdate = Date.now() / 1000; // Avoid double counting on the next resume.
+            const totalDuration = Object.values(currentState.byDate).reduce((sum, b) => sum + b.durationWatched, 0);
+            const totalActual = Object.values(currentState.byDate).reduce((sum, b) => sum + b.actualTimeWatched, 0);
+            console.log(`[Video Analytics] Video paused. Session: accumulated=${totalDuration.toFixed(1)}s, actual=${totalActual.toFixed(1)}s`);
             updateStorage();
         });
         video.setAttribute('data-tracked', 'true');
@@ -240,22 +300,31 @@ function initializeTracking() {
 
     mutationObserver.observe(document.body, {childList: true, subtree: true});
 
-    // Add event listener to save data and clean up before tab is closed
-    window.addEventListener('beforeunload', function() {
-        console.log('[Video Analytics] Tab closing, saving final data and cleaning up...');
+    // Save data and clean up when the page is being unloaded. updateStorage()
+    // merges synchronously from the in-memory cache and dispatches a single
+    // storage.local.set(), so the final data survives tab teardown.
+    function handlePageUnload() {
+        console.log('[Video Analytics] Page unloading, saving final data and cleaning up...');
         // Disconnect the observer to prevent memory leaks
         if (mutationObserver) {
             mutationObserver.disconnect();
             mutationObserver = null;
         }
         updateStorage();
-    });
+    }
+    window.addEventListener('pagehide', handlePageUnload);
+    window.addEventListener('beforeunload', handlePageUnload);
 }
 
-// Checks for video elements on the page and initializes tracking if found. If not, retries after a delay.
+// Checks for video elements on the page and initializes tracking if found.
 function checkForVideos() {
     const videos = document.getElementsByTagName('video');
     if (videos.length > 0) {
+        // Videos found - cancel any pending retry so only one chain ever exists.
+        if (retryTimer !== null) {
+            clearTimeout(retryTimer);
+            retryTimer = null;
+        }
         if (!isTrackingInitialized) {
             console.log(`[Video Analytics] Found ${videos.length} video(s) on page, initializing tracking...`);
             initializeTracking();
@@ -274,7 +343,23 @@ function checkForVideos() {
         }
     } else {
         console.log('[Video Analytics] No videos found, retrying in 10 seconds...');
-        setTimeout(checkForVideos, 10000); // Retry after 10 second if no videos are found.
+        scheduleRetry();
+    }
+}
+
+// Schedules at most one pending retry; repeated background signals while a
+// retry is pending never create additional parallel chains.
+function scheduleRetry() {
+    if (retryTimer === null) {
+        retryTimer = setTimeout(function () {
+            retryTimer = null;
+            checkForVideos();
+        }, 10000);
+        console.log('[Video Analytics] Scheduled single retry in 10 seconds');
+    } else {
+        // Expected on every background poll for audible pages without videos -
+        // debug level keeps the console usable.
+        console.debug('[Video Analytics] Retry already pending, skipping duplicate schedule');
     }
 }
 
@@ -292,4 +377,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // We don't automatically start tracking anymore.
 // Instead, we wait for a signal from the background script.
-console.log('[Video Analytics] Content script loaded, waiting for background script signal');
+const isTopFrame = window.top === window;
+let pageUrl = 'unknown';
+try {
+    // Log path only - query strings can carry session tokens.
+    pageUrl = window.location.origin + window.location.pathname;
+} catch (error) {
+    // Cross-origin restriction - keep the 'unknown' fallback
+}
+console.log(`[Video Analytics] Content script loaded in ${isTopFrame ? 'top frame' : 'iframe'} (${pageUrl}), waiting for background script signal`);

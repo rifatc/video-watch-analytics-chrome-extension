@@ -4,10 +4,15 @@ let totalPages = 1;
 let paginatedHistory = [];
 
 function formatTime(seconds) {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${hours}h ${minutes}m ${secs}s`;
+    // Handle negatives explicitly: Math.floor rounds toward -Infinity, which
+    // used to produce nonsense like "-2h -2m -1s" for -3661s (e.g. negative
+    // time saved after playback stalls or sub-1x segments).
+    const sign = seconds < 0 ? '-' : '';
+    const absSeconds = Math.abs(seconds);
+    const hours = Math.floor(absSeconds / 3600);
+    const minutes = Math.floor((absSeconds % 3600) / 60);
+    const secs = Math.floor(absSeconds % 60);
+    return `${sign}${hours}h ${minutes}m ${secs}s`;
 }
 
 function updatePopup() {
